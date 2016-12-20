@@ -17,5 +17,9 @@ void printRecord(Record record);
 int createBlock_and_addRecord(int fd, Record record,int global_depth);
 int addRecordToBlock(int fd, int blockNum, Record record);
 
+int cmpID(Record record,char *value);
+int cmpName(Record record,char *value);
+int cmpSurname(Record record,char *value);
+int cmpCity(Record record,char *value);
 
 #endif

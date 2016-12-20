@@ -6,7 +6,6 @@
 
 int get_bucket_data(int fd, int bucketNum)
 {
-    //printf("\n---In get_bucket_data---\n");
     int data;
     int i;
     int currBlock;
@@ -25,17 +24,16 @@ int get_bucket_data(int fd, int bucketNum)
     int EH_info_size;
     memcpy(&EH_info_size,block,sizeof(int));
 
-    offset += sizeof(int) + EH_info_size + sizeof(bucketBlock_info) + bucketNum*BUCKET_SIZE;
-    //printf("offset %d\n",offset );
-    
-    while (offset >= BLOCK_SIZE)
+    offset = sizeof(int) + EH_info_size + sizeof(bucketBlock_info) + bucketNum*BUCKET_SIZE;
+
+    int blockBuckets = (BLOCK_SIZE - sizeof(int) - EH_info_size - sizeof(bucketBlock_info)) / BUCKET_SIZE;
+    while (offset + 4 > BLOCK_SIZE)
     {
-        offset -= BLOCK_SIZE;
-        offset += sizeof(bucketBlock_info);
+        bucketNum -= blockBuckets;
+        offset = sizeof(bucketBlock_info) + bucketNum*BUCKET_SIZE;
+        blockBuckets = (BLOCK_SIZE - sizeof(bucketBlock_info)) / BUCKET_SIZE;
         blockNum++;
-      
     }
-    //printf("offset %d\n",offset );
     
     block += sizeof(int);
     block += EH_info_size;
@@ -48,6 +46,7 @@ int get_bucket_data(int fd, int bucketNum)
     {
         currBlock = nextBlock;
 
+
         if (BF_ReadBlock(fd, currBlock, &block) < 0) 
         {
             BF_PrintError("Error getting block");
@@ -55,32 +54,30 @@ int get_bucket_data(int fd, int bucketNum)
         }
 
         memcpy(&bucket_info,block,sizeof(bucketBlock_info));
-        //printf("currBlock %d\n",currBlock); 
         nextBlock = bucket_info.nextBucketBlock;
     }
 
-    if (BF_ReadBlock(fd, currBlock, &block) < 0) 
+    void * correct_block;
+    if (BF_ReadBlock(fd, currBlock, &correct_block) < 0) 
     {
             BF_PrintError("Error getting block");
             return -1;
     }
-    block += offset;
+    correct_block += offset;
 
-    memcpy(&data,block,sizeof(int));
-    //printf("\nData got :%d",data);
-    //printf("\n---Out of get_bucket_data---\n");
+    memcpy(&data,correct_block,sizeof(int));
+
     return data;
 }
 
 
 int change_bucket_data(int fd, int bucketNum, int newData)
 {
-    printf("\n---In change_bucket_data---\n");
-    int offset=0;
+    int i;
     int currBlock;
     int nextBlock;
-    int i;
-    bucketBlock_info bucket_info;
+    int offset=0;
+    bucketBlock_info bucket_info;    
     void *block= NULL;
 
     int blockNum=1;/*there is at least one block with buckets*/
@@ -93,16 +90,17 @@ int change_bucket_data(int fd, int bucketNum, int newData)
     int EH_info_size;
     memcpy(&EH_info_size,block,sizeof(int));
 
-    offset += sizeof(int) + EH_info_size + sizeof(bucketBlock_info) + bucketNum*BUCKET_SIZE;
-    printf("offset %d\n",offset );
-    while (offset >= BLOCK_SIZE)
+    offset = sizeof(int) + EH_info_size + sizeof(bucketBlock_info) + bucketNum*BUCKET_SIZE;
+
+    int blockBuckets = (BLOCK_SIZE - sizeof(int) - EH_info_size - sizeof(bucketBlock_info)) / BUCKET_SIZE;
+    while (offset + 4 > BLOCK_SIZE)
     {
-        offset -= BLOCK_SIZE;
-        offset += sizeof(bucketBlock_info);
-        printf("offset %d\n",offset );
+        bucketNum -= blockBuckets;
+        offset = sizeof(bucketBlock_info) + bucketNum*BUCKET_SIZE;
+        blockBuckets = (BLOCK_SIZE - sizeof(bucketBlock_info)) / BUCKET_SIZE;
         blockNum++;
     }
-
+    
     block += sizeof(int);
     block += EH_info_size;
     memcpy(&bucket_info,block,sizeof(bucketBlock_info));
@@ -113,24 +111,23 @@ int change_bucket_data(int fd, int bucketNum, int newData)
     for (i=1;i<blockNum;i++)
     {
         currBlock = nextBlock;
-//EDWWW GAMW TI MANA TU
+
         if (BF_ReadBlock(fd, currBlock, &block) < 0) 
         {
-            printf("bucketData %d",get_bucket_data(fd,bucketNum));
-            fprintf(stderr,"blockNum %d offset %d currBlock %d \n",blockNum,offset,currBlock);
             BF_PrintError("Error getting block");
             return -1;
         }
 
         memcpy(&bucket_info,block,sizeof(bucketBlock_info));
-        printf("currBlock %d\n",currBlock); 
         nextBlock = bucket_info.nextBucketBlock;
     }
 
+    if (BF_ReadBlock(fd, currBlock, &block) < 0) 
+    {
+            BF_PrintError("Error getting block");
+            return -1;
+    }
     block += offset;
-    printf("Gonna change_bucket_data..with new data %d for bucket %d\n",newData,bucketNum);
-    printf("offset %d\n",offset );
-    printf("\ncurrBlock:%d,blockNum:%d\n",currBlock,blockNum );
     memcpy(block,&newData,sizeof(int));
     
     if (BF_WriteBlock(fd,currBlock) < 0)
@@ -139,74 +136,13 @@ int change_bucket_data(int fd, int bucketNum, int newData)
         return -1;
     }
 
-    printf("Changed bucket %d data (located in block %d) and its newData is %d\n",bucketNum,currBlock,newData);
-    printf("\n---Out of change_bucket_data---\n");
     return 0;
 }
 
 
-void printBuckets(int fd,EH_info * info)
-{
-  printf("\nIn print Buckets!\n\n");
-    int bucketCounter;
-    void * block_ptr;
-    int index;
-    int j;
-    bucketBlock_info bucketsInfo;
-
-    BF_ReadBlock(fd, 0, &block_ptr);
-    int EH_info_size;
-    memcpy(&EH_info_size,block_ptr,sizeof(int));
-
-   	block_ptr += sizeof(int);
-    block_ptr += EH_info_size;
-   	printf("---BLOCK #0---\n");
-   	memcpy(&bucketsInfo,block_ptr,sizeof(bucketsInfo));
-   	block_ptr += sizeof(bucketsInfo);
-    printf("Bucket block info:nextBucketBlock: %d \n\n",bucketsInfo.nextBucketBlock);
-
-   	bucketCounter = 0;
-   	for(j = 0;j<(BLOCK_SIZE - sizeof(*info) - sizeof(bucketsInfo)) / sizeof(int);j++)
-    {
-        memcpy(&index,block_ptr,sizeof(int));
-        printf("%d ",index);
-        if (index !=0)
-        	bucketCounter++;
-        block_ptr += sizeof(int);
-    }
-    printf("\nFound %d buckets!\n\n",bucketCounter);
-
-    int nextBucketBlock = bucketsInfo.nextBucketBlock;
-    while (nextBucketBlock != -1)
-    {
-    	BF_ReadBlock(fd, nextBucketBlock, &block_ptr);
-    	printf("---BLOCK #%d---\n",nextBucketBlock);
-    	memcpy(&bucketsInfo,block_ptr,sizeof(bucketsInfo));
-   		block_ptr += sizeof(bucketsInfo);
-
-   		printf("Bucket block info: buckets:nextBucketsBlock: %d \n\n",bucketsInfo.nextBucketBlock);
-    	
-    	bucketCounter = 0;
-    	for(j = 0;j<(BLOCK_SIZE - sizeof(bucketsInfo)) / sizeof(int);j++)
-    	{
-        	memcpy(&index,block_ptr,sizeof(int));
-        	printf("%d ",index);
-        	if (index !=0)
-        		bucketCounter++;
-        	block_ptr += sizeof(int);
-    	}
-
-    	printf("\nFound %d buckets!\n\n",bucketCounter);
-    	nextBucketBlock = bucketsInfo.nextBucketBlock;
-
-    }
-}
-
 int split_bucket(EH_info * eh_info, int bucket_num, int block_num, Record record)
 {
-      printf("\n---In split_bucket for bucket %d (has block %d as data)---\n",bucket_num,block_num);
       int fd = eh_info->fileDesc;
-      int old_localDepth;
       void *block;
       int records;
       BLOCK_info info;
@@ -218,7 +154,6 @@ int split_bucket(EH_info * eh_info, int bucket_num, int block_num, Record record
 
       /*Copying info*/
       memcpy(&info, block, sizeof(BLOCK_info));
-      old_localDepth = info.localDepth;
 
       records = info.records;
    
@@ -262,15 +197,7 @@ int split_bucket(EH_info * eh_info, int bucket_num, int block_num, Record record
           return -1;
       }
 
-      printf("Split:changing bucket data of %d to %d!\n\n",bucket_num,new_block) ;
-      int error =  change_bucket_data(fd, bucket_num, new_block);
-      if (error)
-      {
-        printf("Provlima gia bucket %d\n pu dixni sto block %d paei na allaksi to %d",bucket_num,block_num,bucket_num + (1 << old_localDepth));
-        printBuckets(fd,eh_info);
-      }
-      printf("Split: result of changing bucket data\n");
-      //printBuckets(fd,eh_info);
+      change_bucket_data(fd, bucket_num, new_block);
 
       for (int i = 0; i < records; ++i)
       {
@@ -280,10 +207,6 @@ int split_bucket(EH_info * eh_info, int bucket_num, int block_num, Record record
       free(recs);
       EH_InsertEntry(eh_info, record);
 
-      printf("Split: done with inserts!Result\n");
-      //printBuckets(fd,eh_info);
-      printf("\n---Out of split_bucket for bucket %d (has block %d as data)---\n",bucket_num,block_num);
-
       return 0;
 }
 
@@ -291,22 +214,18 @@ int split_bucket(EH_info * eh_info, int bucket_num, int block_num, Record record
 
 int extend(EH_info *info)
 {
-    printf("\n---In extend---\n");
     int fd = info->fileDesc;
     int current_buckets, old_buckets;
     int blocks_with_buckets = 0;
     int currBlock = 0;
     int blockBuckets;
     int bucketCounter;
-    int nextBucketBlock;
     old_buckets = 1 << info->depth;
     
     int *init_array_buckets = malloc(old_buckets*BUCKET_SIZE); 
     int *array_buckets = init_array_buckets;
     void *block;
     bucketBlock_info bucketsInfo;
-
-    printf("In extend function\n");
     
 
     if (BF_ReadBlock(fd, currBlock, &block) < 0) 
@@ -328,7 +247,6 @@ int extend(EH_info *info)
     block += EH_info_size;
     int test;
     memcpy(&test,block,sizeof(int));
-    printf("first index !%d",test);
 
     if (BF_WriteBlock(fd, currBlock) < 0)
     {
@@ -360,7 +278,7 @@ int extend(EH_info *info)
 
     /*calculate how many buckets fit in a block (besides block 0)*/
     int bucketsPerBlock = (BLOCK_SIZE - info->bucketBlockInfoSize) / BUCKET_SIZE;
-    //printf("next bucket block is %d\nnew buckeets =%d\n", bucketsInfo.nextBucketBlock, all_buckets );
+
     while(current_buckets != 0)
     {
         currBlock = bucketsInfo.nextBucketBlock;
@@ -476,10 +394,8 @@ int extend(EH_info *info)
         array_buckets += bucketCounter;
     }
 
-    printf("Extend:Done.printing result!\n");
-    printBuckets(fd,info);
+    //printBuckets(fd,info);
     free(init_array_buckets);
-    printf("\n---Out of extend---\n");
 
     return 0; 
 }
@@ -520,15 +436,37 @@ int addRecordToBlock(int fd, int blockNum, Record record)
     block += sizeof(BLOCK_info) + (block_info.records-1)*sizeof(Record);
     memcpy(block, &record, sizeof(Record));
 
-    //printf("BEFORE\n");
     //printBuckets(fd,EH_OpenIndex("EH_hashFile"));
     if(BF_WriteBlock(fd, blockNum) < 0)
     {
         BF_PrintError("Error writing block back");
         return -1;
     }
-    //printf("AFTER\n");
-    //printBuckets(fd,EH_OpenIndex("EH_hashFile"));
+
     return 0;
 
+}
+
+int cmpID(Record record,char *value)
+{
+    char * idString = malloc(40*sizeof(char));
+    int cmp;
+
+    my_itoa(record.id,&idString);
+    cmp = strcmp(idString,value);
+    free(idString);
+
+    return cmp == 0;
+}
+int cmpName(Record record,char *value)
+{
+    return strcmp(record.name,value) == 0;
+}
+int cmpSurname(Record record,char *value)
+{
+    return strcmp(record.surname,value) == 0;
+}
+int cmpCity(Record record,char *value)
+{
+    return strcmp(record.city,value) == 0;
 }

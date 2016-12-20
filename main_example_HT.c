@@ -82,7 +82,6 @@ int main(int argc, char **argv) {
     // -- get all entries
     char value[20];
     strcpy(value, "Keratsini");
-    printf("Starting get_AllEntries!\n");
     get_AllEntries(info, value);
     // int value = 11903588;
     // get_AllEntries(info, &value);
@@ -94,6 +93,7 @@ int main(int argc, char **argv) {
     //free(info->attrName);
     //free(info);
     info = NULL;
+    HashStatistics(fileName);
 
     return EXIT_SUCCESS;
 }

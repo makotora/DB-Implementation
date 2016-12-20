@@ -50,7 +50,7 @@ superfasthash.o: superfasthash.c
 	$(CC) $(CFLAGS) superfasthash.c
 
 clean:
-	rm -f $(HT_OBJS) $(EH_OBJS) HT_test.o EH_test.o main_example_HT.o $(OUT)
+	rm -f $(HT_OBJS) $(EH_OBJS) HT_test.o EH_test.o main_example_HT.o main_example_EH.o $(OUT)
 
 count:
 	wc $(SOURCE) $(HEADER)

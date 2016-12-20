@@ -23,4 +23,7 @@ int cmpName(Record record,char *value);
 int cmpSurname(Record record,char *value);
 int cmpCity(Record record,char *value);
 
+int max(int *max, int x);
+int min(int *min, int x);
+
 #endif

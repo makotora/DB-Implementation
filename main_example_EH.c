@@ -67,10 +67,10 @@ int main(int argc, char **argv) {
     // -- create index
     char attrName[20];
     int depth = 7;
-    //strcpy(attrName, "city");
-    //char attrType = 'c';
-     strcpy(attrName, "id");
-    char attrType = 'i';
+    strcpy(attrName, "city");
+    char attrType = 'c';
+    // strcpy(attrName, "id");
+    // char attrType = 'i';
     create_Index(fileName, attrName, attrType, depth);
 
     // -- open index
@@ -92,8 +92,8 @@ int main(int argc, char **argv) {
     HashStatistics(fileName);
 
     // clean up
-    free(info->attrName);
-    free(info);
+//    free(info->attrName);
+//    free(info);
     info = NULL;
 
     return EXIT_SUCCESS;

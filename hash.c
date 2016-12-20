@@ -42,6 +42,7 @@ int HT_CreateIndex( char *fileName, char attrType, char* attrName, int attrLengt
         BF_PrintError("Error getting block");
         return -1;
     }
+    int HT_info_size = 4*sizeof(int) + sizeof(long int) + sizeof(char) + attrLength*sizeof(char);
     /*write data to info*/
     info.fileDesc = fd;
     info.attrType = attrType;
@@ -51,11 +52,26 @@ int HT_CreateIndex( char *fileName, char attrType, char* attrName, int attrLengt
     info.recordLength = sizeof(Record);
     info.blockInfoSize = sizeof(BLOCK_info);
 
-    memcpy(block,&info,sizeof(info));
-    block += sizeof(info);/*Adjust pointer to point after the saved struct*/
+    memcpy(block,&HT_info_size,sizeof(int));
+    block += sizeof(int);
+
+    memcpy(block,&(info.fileDesc),sizeof(int));
+    block += sizeof(int);
+    memcpy(block,&(info.attrType),sizeof(char));
+    block += sizeof(char);
+    memcpy(block,&(info.attrLength),sizeof(int));
+    block += sizeof(int);
+    memcpy(block,(info.attrName),attrLength*sizeof(char));
+    block += attrLength*sizeof(char);
+    memcpy(block,&(info.numBuckets),sizeof(long int));
+    block += sizeof(long int);
+    memcpy(block,&(info.recordLength),sizeof(int));
+    block += sizeof(int);
+    memcpy(block,&(info.blockInfoSize),sizeof(int));
+    block += sizeof(int);
     
     /*save as many buckets as we can in block 0*/
-    blockBuckets = (BLOCK_SIZE - sizeof(info)) / BUCKET_SIZE;/*calculate how many buckets fit in block 0*/
+    blockBuckets = (BLOCK_SIZE - HT_info_size ) / BUCKET_SIZE;/*calculate how many buckets fit in block 0*/
     if (buckets < blockBuckets)
     {/*if we can fit all of them in block 0*/
         blockBuckets = buckets;
@@ -147,9 +163,28 @@ HT_info* HT_OpenIndex(char *fileName) {
         return NULL;
     }
 
+    block += sizeof(int);
+
     info = malloc(sizeof(HT_info));
 
-    memcpy(info, block, sizeof(HT_info));
+    memcpy(&(info->fileDesc),block,sizeof(int));
+    block += sizeof(int);
+    memcpy(&(info->attrType),block,sizeof(char));
+    block += sizeof(char);
+    memcpy(&(info->attrLength),block,sizeof(int));
+    block += sizeof(int);
+
+    info->attrName = malloc( (info->attrLength+1)*sizeof(char));
+    memcpy(info->attrName,block,(info->attrLength)*sizeof(char));
+    info->attrName[info->attrLength] = '\0';
+    block += (info->attrLength)*sizeof(char);
+
+    memcpy(&(info->numBuckets),block,sizeof(long int));
+    block += sizeof(long int);
+    memcpy(&(info->recordLength),block,sizeof(int));
+    block += sizeof(int);
+    memcpy(&(info->blockInfoSize),block,sizeof(int));
+    block += sizeof(int);
 
     return info;
 } 
@@ -165,6 +200,7 @@ int HT_CloseIndex( HT_info* header_info ) {
         return -1;
     }
 
+    free(header_info->attrName);
     free(header_info);
 
     return 0;
@@ -180,8 +216,7 @@ int HT_InsertEntry(HT_info header_info, Record record) {
     int recordLength = header_info.recordLength;
     int blockInfoSize = header_info.blockInfoSize;
 
-    //printf("Starting HT_InsertEntry function\n"); 
-    char *key = malloc(40*sizeof(char));
+    char *key = malloc(25*sizeof(char));
     char *attrName = header_info.attrName;
     if (!strcmp(attrName,"id"))
     {
@@ -211,7 +246,7 @@ int HT_InsertEntry(HT_info header_info, Record record) {
     {
         createBlock_and_addRecord(fd, record);
         change_bucket_data(fd, hash_key, BF_GetBlockCounter(fd)-1);
-        printBlock(fd, BF_GetBlockCounter(fd)-1);
+        //printBlock(fd, BF_GetBlockCounter(fd)-1);
     }
     else    //if there is already records in this bucket
     {
@@ -271,8 +306,7 @@ int HT_GetAllEntries(HT_info header_info, void *value) {
     int blockInfoSize = header_info.blockInfoSize;
     char *attrName = header_info.attrName;
     
-    //printf("Starting HT_GetAllEntries function\n"); 
-    char *key = malloc(40*sizeof(char));
+    char *key = malloc(25*sizeof(char));
     strcpy(key,value);
 	int hash_key = hash(key, strlen(key)) % numBuckets; //the bucket in which this entry is gonna go
     
@@ -329,7 +363,6 @@ int HT_GetAllEntries(HT_info header_info, void *value) {
         currentBlock = block_info.nextBlock;
     }
 
-    //fprintf(stderr,"\nHT_GetAllEntries finished after looking at %d blocks.\n",blockCounter);
     free(key);
 
     return blockCounter;
@@ -338,7 +371,114 @@ int HT_GetAllEntries(HT_info header_info, void *value) {
 
 int HashStatistics(char* filename) {
     /* Add your code here */
-    
-    return -1;
+    HT_info* info;
+    info = HT_OpenIndex(filename);
+    void *block;
+    int allBlocks;
+    int fd;
+    int i;
+    int blocksPerBucket;
+    int minRecs = 1 << 20;
+    float avgRecs = 0.0;
+    int maxRecs = 0;
+    int buckets;
+    int nextBlock;
+    float avgBlocksPerBuckets= 0.0;
+    int currRecs = 0;
+    int *buckets_with_overflow;
+    BLOCK_info block_info;
+    if (info == NULL)
+    {
+        printf("Error opening %s\n", filename);
+        return -1;
+    }
+
+    fd = info->fileDesc;
+    allBlocks = BF_GetBlockCounter(fd);
+    printf("\n----Statistic for file %s----\n\nBlocks: %d\n", filename, allBlocks);
+
+    if (BF_ReadBlock(fd, 0, &block) < 0) 
+    {
+        BF_PrintError("Error getting block");
+        return -1;
+    }
+
+
+    block+= sizeof(HT_info);
+
+    buckets = info->numBuckets;
+    buckets_with_overflow = malloc(buckets*sizeof(int));
+    for (i = 0; i < buckets; ++i)
+    {
+        buckets_with_overflow[i] = 0;
+    }
+
+    int currentBlock;
+    for (i = 0; i < buckets; ++i)
+    {
+        blocksPerBucket = 0;
+        currRecs = 0;
+        currentBlock = get_bucket_data(fd, i);
+        if(currentBlock == -1)
+        {
+            minRecs = 0;
+            continue;
+        }
+        blocksPerBucket++;
+
+        avgBlocksPerBuckets++;
+        if (BF_ReadBlock(fd, currentBlock, &block) < 0) 
+        {
+            BF_PrintError("Error getting block");
+            return -1;
+        }
+
+        memcpy(&block_info, block, info->blockInfoSize);
+        currRecs += block_info.records;
+        nextBlock = block_info.nextBlock;
+
+        while(nextBlock != -1)
+        {
+            avgBlocksPerBuckets++;
+            buckets_with_overflow[i]++;
+            blocksPerBucket++;
+            currentBlock = nextBlock;
+            if (BF_ReadBlock(fd, currentBlock, &block) < 0) 
+            {
+                BF_PrintError("Error getting block");
+                return -1;
+            }
+            memcpy(&block_info, block, info->blockInfoSize);
+          
+            currRecs += block_info.records;
+            nextBlock = block_info.nextBlock;
+        }
+
+        min(&minRecs, currRecs);
+        max(&maxRecs, currRecs);
+        avgRecs+= currRecs;
+    }   
+    avgBlocksPerBuckets = avgBlocksPerBuckets/buckets;
+    avgRecs = avgRecs/buckets;
+
+    printf("Minimum records in bucket: %d\n", minRecs);
+    printf("Maximum records in bucket: %d\n", maxRecs);
+    printf("Average records per bucket: %f\n", avgRecs);
+    printf("Average blocks per bucket: %f\n", avgBlocksPerBuckets);
+
+    int overflow = 0;
+    for (int i = 0; i < buckets; ++i)
+    {
+        if (buckets_with_overflow[i] > 0)
+        {
+            overflow++;
+            printf("Bucket #%d has %d overflow blocks\n", i, buckets_with_overflow[i]);
+        }
+    }
+    printf("There are %d buckets with overflow blocks\n", overflow);
+    free(buckets_with_overflow);
+    HT_CloseIndex(info);
+
+    return 1;
     
 }

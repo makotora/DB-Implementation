@@ -100,7 +100,6 @@ int EH_CreateIndex(char *fileName, char* attrName, char attrType, int attrLength
     buckets = total_buckets;/*'reset' temp variable to total_buckets*/ 
     int recordsBlock = blocksWithBuckets;/*first block with records is right after the last block with buckets*/
     
-    printf("Initial buckets:%d\n",buckets);
     /*save as many buckets as we can in block 0*/
     /*calculate how many buckets fit in block 0*/
     blockBuckets = firstBlockBuckets;
@@ -250,7 +249,6 @@ EH_info* EH_OpenIndex(char *fileName) {
         BF_PrintError("Error opening file");
         return NULL;
     }
-    printf("HI");
 
     if (BF_ReadBlock(fd, 0, &block) < 0) 
     {
@@ -285,8 +283,6 @@ EH_info* EH_OpenIndex(char *fileName) {
     memcpy(&(info->bucketBlockInfoSize),block,sizeof(int));
     block += sizeof(int);
 
-    printf("tessst %c %d %s %d",info->attrType,info->attrLength,info->attrName,info->depth);
-
     return info;
    
 } 
@@ -320,8 +316,7 @@ int EH_InsertEntry(EH_info* header_info, Record record) {
     int blockInfoSize = header_info->blockInfoSize;
 
 
-    printf("\n---In EH_InsertEntry function---\n"); 
-    char *key = malloc( 25*sizeof(char));
+    char *key = malloc(25*sizeof(char));
 
     if (!strcmp(header_info->attrName,"id"))
     {
@@ -341,6 +336,7 @@ int EH_InsertEntry(EH_info* header_info, Record record) {
     }
     
     int hash_key = hash(key, strlen(key)) % numBuckets; //the bucket in which this entry is gonna go
+    //printBuckets(fd,header_info);
     int currentBlock = get_bucket_data(fd, hash_key);
 
     if (BF_ReadBlock(fd, currentBlock, &block) < 0) 
@@ -355,15 +351,13 @@ int EH_InsertEntry(EH_info* header_info, Record record) {
     int max_records = (BLOCK_SIZE - blockInfoSize) / recordLength;
 
     //printBuckets(fd,header_info);
-    printf("numBuckets = %d\nhashed to bucket %d\n(in block %d) ,records :%d\n",numBuckets,hash_key,currentBlock,block_info.records);
     if (block_info.records < max_records)
     {
-        printf("Adding record to block\n\n");
+        //printf("Adding record to block\n\n");
         addRecordToBlock(fd, currentBlock, record);
     }
     else
     {
-        printf("global d = %d\nlocal d = %d\n\n",depth,block_info.localDepth);
         if (block_info.localDepth == depth)/*if block's local depth is equal to global depth*/
             extend(header_info);
 
@@ -371,7 +365,6 @@ int EH_InsertEntry(EH_info* header_info, Record record) {
     }
 
     free(key);
-    printf("\n---Out of EH_InsertEntry---\n");
 
     return 0;
    
@@ -380,6 +373,69 @@ int EH_InsertEntry(EH_info* header_info, Record record) {
 
 int EH_GetAllEntries(EH_info header_info, void *value) {
     /* Add your code here */
+    void *block;
+
+    int fd = header_info.fileDesc;
+    int numBuckets = 1 << header_info.depth;
+    int recordLength = header_info.recordLength;
+    int blockInfoSize = header_info.blockInfoSize;
+    char *attrName = header_info.attrName;
+    
+    char *key = malloc(25*sizeof(char));
+    strcpy(key,value);
+    int hash_key = hash(key, strlen(key)) % numBuckets; //the bucket in which this entry is gonna go
+    
+    int currentBlock = get_bucket_data(fd, hash_key);
+    Record * records;
+    int numOfRecords;
+    int blockCounter = 0;
+    int i;
+    BLOCK_info block_info;
+
+    int (*compareKeyFunction)(Record,char *);/*function that checks if records key matches the value*/
+    if (!strcmp(attrName,"id"))
+    {
+        compareKeyFunction = cmpID;
+    }
+    else if (!strcmp(attrName,"name"))
+    {
+        compareKeyFunction = cmpName;
+    }
+    else if (!strcmp(attrName,"surname"))
+    {
+        compareKeyFunction = cmpSurname;
+    }
+    else if (!strcmp(attrName,"city"))
+    {
+        compareKeyFunction = cmpCity;
+    }
+
+
+        if (BF_ReadBlock(fd, currentBlock, &block) < 0) 
+        {
+            BF_PrintError("Error getting block");
+            return -1;
+        }
+        
+        memcpy(&block_info, block, blockInfoSize);
+        numOfRecords = block_info.records;
+
+        records = malloc(numOfRecords*recordLength);
+        block += blockInfoSize;
+        memcpy(records,block,numOfRecords*recordLength);
+
+        for(i=0;i<numOfRecords;i++)
+        {
+            if (compareKeyFunction(records[i],key) == 1)
+                printRecord(records[i]);
+        }
+
+        free(records);
+
+    
+    free(key);
+
+    return blockCounter;   
 
 
     return 0;
@@ -527,6 +583,7 @@ int HashStatistics(char* filename) {
     printf("Average number of records: %.5f\n",average);
     printf("Maximum number of records: %d\n",maxNumOfRecords);
     free(recordBlocks);
+    free(init_array_buckets);
     EH_CloseIndex(info);
 
     return -1;
